@@ -3,12 +3,12 @@ import numpy as np
 
 class Gaussian:
 
-    def __init__(self, sigma=5):
+    def __init__(self, sigma=2):
         self.sigma = sigma
-    
+
     def __call__(self, X, Z):
         return Gaussian.kernel(X, Z, self.sigma)
-    
+
     @classmethod
     def kernel(cls, X, Z, sigma):
         """

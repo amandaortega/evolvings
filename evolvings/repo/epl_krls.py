@@ -10,15 +10,16 @@ class ePLKRLSRegressor(object):
 		self.params = {
 			'alpha' : alpha, 'beta' : beta, 'tau' : tau, 'lambd' : lambd
 		}
+		self.c = 1
 
 	def compat(self, sample, cluster):
 		return 1.00 - np.linalg.norm(sample[1:] - cluster[1:])/len(sample[1:])
 
 	def plot_centers(self, data = None):
-		print np.array([np.array(i['pos']) for i in self.clusters])
+		#print np.array([np.array(i['pos']) for i in self.clusters])
 		np.savetxt('centers.txt', np.array([i['pos'] for i in self.clusters]))
 		np.savetxt('real.txt', data)
-		proc = subprocess.Popen(['gnuplot','-p'], 
+		proc = subprocess.Popen(['gnuplot','-p'],
 		                        shell=True,
 		                        stdin=subprocess.PIPE,
 		                        )
@@ -33,7 +34,7 @@ class ePLKRLSRegressor(object):
 	def gaussian(self, sample, cluster):
 		return np.exp(-np.power(np.linalg.norm(cluster - sample), 2)/0.09)
 
-	def wipe(self, mi):
+	def wipe(self):
 
 		for i in range(len(self.clusters) - 1):
 			l = np.array([])
@@ -43,13 +44,8 @@ class ePLKRLSRegressor(object):
 
 					if self.compat(vi['pos'], vj['pos']) >= self.params['lambd']:
 						vi['pos'] = (vi['pos'] + vj['pos'])/2
-
-						mi[i] = (mi[i] + mi[j])/2 
 						l = np.append(l, int(j))
-
 				self.clusters = [i for j, i in enumerate(self.clusters) if j not in l]
-
-				mi = np.delete(mi, (l))
 
 	def _build_coefs(self, x_ext, y):
 		krls = KRLS(params=dict(adopt_thresh=0.01, dico_max_size=100))
@@ -58,7 +54,7 @@ class ePLKRLSRegressor(object):
 
 	def evolve(self, x, y = 0.00):
 		x_ext = np.append(1., x)
-		
+
 		# Checking for system prior knowledge
 		if not hasattr(self, 'know'):
 			self.know = True
@@ -74,8 +70,6 @@ class ePLKRLSRegressor(object):
 		p = np.array([self.compat(x_ext, c['pos']) for c in self.clusters])
 		# Arousal index
 		self.a = self.arousal(self.a, max(p))
-		# Degree of activation
-		mi = np.array([self.gaussian(x_ext, c['pos']) for c in self.clusters])
 
 		if self.a > self.params['tau']:
 			# Creating a new cluster
@@ -83,8 +77,6 @@ class ePLKRLSRegressor(object):
 				'pos': x_ext,
 				'coefs': self._build_coefs(x_ext, y)
 			})
-
-			mi = np.append(mi, 1.)
 		else:
 			s = self.clusters[np.argmax(p)]['pos']
 
@@ -97,10 +89,15 @@ class ePLKRLSRegressor(object):
 
 			# Removing redundant clusters
 			if len(self.clusters) > 1:
-				self.wipe(mi)
+				self.wipe()
 
+		# Degree of activation
+		mi = np.array([self.gaussian(x_ext, c['pos']) for c in self.clusters])
 		mi = mi / sum(mi)
 		''' Model output: {y} is {float} in [-inf, inf] '''
+
+		# Eq. 35
+		self.c = self.c + 1
 		y2 = sum([float(j['coefs'].query(x_ext)) * i for i, j in zip(mi, self.clusters)])
 
 		return y2

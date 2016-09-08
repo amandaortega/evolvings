@@ -21,7 +21,7 @@ class KRLS:
         """
         self.kernel = kernel        # Instance of a kernel to use
         # initialize with some reasonable values
-        self.adopt_thresh = 0.25    # approximate linear dependence threshold [0,1]
+        self.adopt_thresh = 0.02    # approximate linear dependence threshold [0,1]
         self.dico_max_size = 15     # maximum size of the dictionary
         self.adaptive = True        # flag if elimination is data-adaptive
         self.alpha = None
@@ -110,6 +110,7 @@ class KRLS:
                 self.kinv, 
                 qt * (target - np.dot(sample_eval['ktwid'].T, self.alpha))
             )
+
     
     def evaluate_sample(self, sample):
         """
@@ -178,15 +179,10 @@ class KRLS:
         ndico = np.array(self.dico_idx)
         self.dico_idx = list(np.where(ndico > didx, ndico - 1, ndico))
     
-    def query(self, sample, target=None):
+    def query(self, sample):
+        # Eq. 34
         kernvals = self.kernel(sample, self.dico).T
-
         res = np.dot(kernvals, self.alpha)
-        if target is None:
-            return res
-        # Compute the mean square error
-        t = np.array(target)
-        err = np.mean((res - t)**2)
-        return {'prediction': res, 'mse': err}
+        return res
     
 
