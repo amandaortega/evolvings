@@ -3,7 +3,7 @@ import numpy as np
 
 class Gaussian:
 
-    def __init__(self, sigma=2):
+    def __init__(self, sigma=1.5):
         self.sigma = sigma
 
     def __call__(self, X, Z):

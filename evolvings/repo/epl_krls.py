@@ -1,6 +1,5 @@
 import numpy as np
 from base.krls import KRLS
-import subprocess
 
 
 class ePLKRLSRegressor(object):
@@ -8,25 +7,12 @@ class ePLKRLSRegressor(object):
 	def __init__(self, alpha=0.01, beta=0.12, lambd=0.85, tau=0.15):
 		self.a = 0.00
 		self.params = {
-			'alpha' : alpha, 'beta' : beta, 'tau' : tau, 'lambd' : lambd
+			'alpha' : alpha, 'beta': beta, 'tau' : tau, 'lambd' : lambd
 		}
 		self.c = 1
 
 	def compat(self, sample, cluster):
 		return 1.00 - np.linalg.norm(sample[1:] - cluster[1:])/len(sample[1:])
-
-	def plot_centers(self, data = None):
-		#print np.array([np.array(i['pos']) for i in self.clusters])
-		np.savetxt('centers.txt', np.array([i['pos'] for i in self.clusters]))
-		np.savetxt('real.txt', data)
-		proc = subprocess.Popen(['gnuplot','-p'],
-		                        shell=True,
-		                        stdin=subprocess.PIPE,
-		                        )
-
-		proc.stdin.write("plot 'centers.txt' using 2:3 with points notitle, 'real.txt' using 1:2 with points notitle\n")
-		proc.stdin.write('pause 1000\n')
-		proc.stdin.write('quit\n')
 
 	def arousal(self, a, p_max):
 		return a + self.params['beta'] * (1 - p_max - a)
