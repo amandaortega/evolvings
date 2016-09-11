@@ -5,7 +5,7 @@ import subprocess
 
 class ePLKRLSRegressor(object):
 
-	def __init__(self, alpha=0.01, beta=0.12, lambd=0.90, tau=0.10):
+	def __init__(self, alpha=0.01, beta=0.12, lambd=0.85, tau=0.15):
 		self.a = 0.00
 		self.params = {
 			'alpha' : alpha, 'beta' : beta, 'tau' : tau, 'lambd' : lambd

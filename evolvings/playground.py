@@ -1,5 +1,4 @@
 from repo.epl_krls import ePLKRLSRegressor
-from repo.epl import ePLRegressor
 from sklearn.preprocessing import MinMaxScaler
 import numpy as np
 from sklearn.metrics import mean_squared_error
@@ -27,6 +26,6 @@ for idata, ndata in zip([imin, imax], [nmin, nmax]):
         for ir in ires:
             w.write(str(ir) + "\n")
 
-    #np.savetxt(str(imm) + ".txt", ires)
+    np.savetxt(str(imm) + ".txt", ires)
     #print np.sqrt(mean_squared_error([idata[i+1] for i in range(len(ndata) - 1)][:-1], ires))
     #eplk.plot_centers(X[1:])
