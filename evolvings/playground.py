@@ -1,31 +1,206 @@
+import numpy as np
+import matplotlib.pyplot as plt
 from repo.epl_krls import ePLKRLSRegressor
 from sklearn.preprocessing import MinMaxScaler
-import numpy as np
-from sklearn.metrics import mean_squared_error
+import matplotlib.mlab as mlab
+import statsmodels.api as sm
+from statsmodels.tsa.arima_process import arma_generate_sample
+from random import normalvariate
+from handler import Handler
 
-imin, imax = np.loadtxt("data/bench_hourly"), np.loadtxt("data/bench_daily")
-nmin, nmax = MinMaxScaler((0 ,1)).fit_transform(imin), \
-             MinMaxScaler((0 ,1)).fit_transform(imax)
 
-imm = 0
-for idata, ndata in zip([imin, imax], [nmin, nmax]):
-    imm = imm + 1
-    # Generating ndata for the first step-ahead forecast
-    X = [ndata[i:i+2] for i in range(len(ndata) - 2)]
-    y = [ndata[i+2] for i in range(len(ndata) - 2)]
+def arrange_data(d):
+    X = []
+    for p in [d[x:x + 24] for x in range(0, len(d), 24)][:-1]:
+        # Defining X the same for all 24 hours in day-ahead
+        for i in range(24):
+            X.append(p)
+    return np.array(X), d[24:]
 
-    eplk = ePLKRLSRegressor()
 
-    nres = []
-    for i in range(1, len(ndata) - 2):
-        r = eplk.evolve(X[i], y[i-1])
-        nres.append(r)
+def calibrate_arma(ar=5, ma=1, data=None):
+    # Fitting an ARMA model for the required data
+    arma = sm.tsa.ARMA(data, (ar, ma)).fit(disp=0)
+    # Capturing the ARMA params
+    params = arma.params
+    # Splitting the params into AR and MA params
+    arparams = np.r_[1, -np.array(
+        params[len(params) - (ar + ma):len(params) - ma])]
+    maparams = np.r_[1, np.array(params[len(params) - ma:])]
 
-    ires = np.array([int(min(idata) + (max(idata) - min(idata)) * i) for i in nres])
-    with open(str(imm) + ".txt", 'w+') as w:
-        for ir in ires:
-            w.write(str(ir) + "\n")
+    # Creating a callback function for generating new series
+    def gen(nsample):
+        # Same mean and standard deviation
+        return [normalvariate(np.average(arma.resid), np.std(
+            arma.resid)) for i in range(nsample)]
 
-    np.savetxt(str(imm) + ".txt", ires)
-    #print np.sqrt(mean_squared_error([idata[i+1] for i in range(len(ndata) - 1)][:-1], ires))
-    #eplk.plot_centers(X[1:])
+    # Generating new time series with the same properties of data
+    return arma_generate_sample(
+        arparams, maparams, len(data), distrvs=gen)
+
+
+# Handler class
+handler = Handler()
+
+for fig, name in enumerate(['042015']):
+    # Initializing KRLS forecasting model
+    krls = ePLKRLSRegressor()
+
+    # Initializing training and testing data
+    trn_data = np.loadtxt('data/pjm/train/%s' % name)
+    tst_data = np.loadtxt('data/pjm/test/%s' % name)
+
+    # Normalizing the two datasets
+    norm_trn_data = MinMaxScaler((0, 1)).fit_transform(trn_data)
+    norm_tst_data = MinMaxScaler((0, 1)).fit_transform(tst_data)
+
+    # Training the KRLS model
+    x_trn, y_trn = arrange_data(norm_trn_data)
+    [krls.evolve(
+        x_trn[i + 1], y_trn[i]) for i in range(len(x_trn) - 1)]
+
+    # Testing the KRLS model
+    x_tst, y_tst = arrange_data(norm_tst_data)
+    fcast = [krls.evolve(
+        x_tst[i + 1], y_tst[i]) for i in range(len(x_tst) - 1)]
+
+    # Denormalizing the testing data
+    fcast_data = np.array([int(min(tst_data) + (
+        max(tst_data) - min(tst_data)) * k) for k in fcast])
+
+
+    err_data = tst_data[25:] - fcast_data
+
+    # ------------------------------
+    ax3 = plt.subplot(3, 3, 1)
+    ax3.set_xlim(xmax=725, xmin=0)
+    ax3.set_ylim(ymax=2500, ymin=-2500)
+    plt.axhline(0, color='gray', linestyle='--')
+    ax3.set_ylabel('Forecast Error (in MW)', {'fontsize': 14})
+    ax3.plot(err_data, color="red", linewidth=1.0, label='Observed')
+    ax3.set_yticks([-2000, -1000, 0, 1000, 2000])
+    handler.insert_legend(ax3)
+    # ------------------------------
+
+    # ------------------------------
+    ax3 = plt.subplot(3, 3, 2)
+    ax3.set_ylabel('Relative Error Frequency (%)', {'fontsize': 14})
+    ax3.set_yticks([0.000, 0.0005, 0.001, 0.0015, 0.002])
+    plt.yticks([0.000, 0.00075, 0.0015, 0.00225, 0.003],
+               ['0.00%', '0.75%', '1.50%', '2.25%', '3.0%'])
+    plt.axis([-1500, 1500, 0, 10])
+    ax3.set_ylim(ymax=0.003, ymin=0)
+    mu, sigma = np.average(err_data), np.std(err_data)
+    n, bins, patches = plt.hist(
+        err_data, 70, normed=1, facecolor='purple', alpha=0.50, label='Observed')
+    handler.insert_legend(ax3)
+    # ------------------------------
+
+    # ------------------------------
+    ax3 = plt.subplot(3, 3, 3)
+    ax3.set_ylabel('Probability Density Function (%)', {'fontsize': 14})
+    ax3.set_yticks([0.000, 0.0005, 0.001, 0.0015, 0.002])
+    plt.yticks([0.000, 0.00075, 0.0015, 0.00225, 0.003],
+               ['0.00%', '0.75%', '1.50%', '2.25%', '3.0%'])
+    plt.axis([-1500, 1500, 0, 10])
+    ax3.set_ylim(ymax=0.003, ymin=0)
+    y = mlab.normpdf(bins, mu, sigma)
+    synt_data = calibrate_arma(data=err_data)
+    plt.plot(bins, y, linestyle='--', color='purple', linewidth=1.5, label='Observed')
+    handler.insert_legend(ax3)
+    # ------------------------------
+
+
+    # ------------------------------
+    ax3 = plt.subplot(3, 3, 4)
+    ax3.set_xlim(xmax=725, xmin=0)
+    ax3.set_ylim(ymax=2500, ymin=-2500)
+    plt.axhline(0, color='gray', linestyle='--')
+    ax3.set_ylabel('Forecast Error (in MW)', {'fontsize': 14})
+    ax3.plot(synt_data, color='orange', linewidth=1.0, label='Simulated')
+    ax3.set_yticks([-2000, -1000, 0, 1000, 2000])
+    handler.insert_legend(ax3)
+    # ------------------------------
+
+
+    # ------------------------------
+    ax3 = plt.subplot(3, 3, 5)
+    ax3.set_ylabel('Relative Error Frequency (%)', {'fontsize': 14})
+    ax3.set_yticks([0.000, 0.0005, 0.001, 0.0015, 0.002])
+    plt.yticks([0.000, 0.00075, 0.0015, 0.00225, 0.003],
+               ['0.00%', '0.75%', '1.50%', '2.25%', '3.0%'])
+    plt.axis([-1500, 1500, 0, 10])
+    ax3.set_ylim(ymax=0.003, ymin=0)
+    mu, sigma = np.average(synt_data), np.std(synt_data)
+    n, bins, patches = plt.hist(
+        synt_data, 70, normed=1, facecolor='cyan', alpha=0.50, label='Simulated with ARMA(5, 1)')
+    handler.insert_legend(ax3)
+    # ------------------------------
+
+    # ------------------------------
+    ax3 = plt.subplot(3, 3, 6)
+    ax3.set_ylabel('Probability Density Function (%)', {'fontsize': 14})
+    ax3.set_yticks([0.000, 0.0005, 0.001, 0.0015, 0.002])
+    plt.yticks([0.000, 0.00075, 0.0015, 0.00225, 0.003],
+               ['0.00%', '0.75%', '1.50%', '2.25%', '3.0%'])
+    plt.axis([-1500, 1500, 0, 10])
+    ax3.set_ylim(ymax=0.003, ymin=0)
+    y = mlab.normpdf(bins, mu, sigma)
+    synt_data = calibrate_arma(data=err_data)
+    ax3.plot(bins, y, linestyle='--', color='#000073', linewidth=1.5, label='Simulated with ARMA(5, 1)')
+    handler.insert_legend(ax3)
+    # ------------------------------
+
+
+    # ------------------------------
+    ax3 = plt.subplot(3, 3, 7)
+    ax3.set_xlim(xmax=725, xmin=0)
+    ax3.set_ylim(ymax=2500, ymin=-2500)
+    plt.axhline(0, color='gray', linestyle='--')
+    ax3.set_ylabel('Forecast Error (in MW)', {'fontsize': 14})
+    ax3.plot(err_data, color="red", linewidth=1.0, label='Observed')
+    ax3.plot(synt_data, color='orange', linewidth=1.0, label='Simulated')
+    ax3.set_yticks([-2000, -1000, 0, 1000, 2000])
+    handler.insert_legend(ax3)
+    # ------------------------------
+
+
+    # ------------------------------
+    ax3 = plt.subplot(3, 3, 8)
+    ax3.set_ylabel('Relative Error Frequency (%)', {'fontsize': 14})
+    ax3.set_yticks([0.000, 0.0005, 0.001, 0.0015, 0.002])
+    plt.yticks([0.000, 0.00075, 0.0015, 0.00225, 0.003],
+               ['0.00%', '0.75%', '1.50%', '2.25%', '3.0%'])
+    plt.axis([-1500, 1500, 0, 10])
+    ax3.set_ylim(ymax=0.003, ymin=0)
+    mu1, sigma1 = np.average(synt_data), np.std(synt_data)
+    n1, bins1, patches1 = plt.hist(
+        synt_data, 70, normed=1, facecolor='cyan', alpha=0.50, label='Simulated with ARMA(5, 1)')
+    mu2, sigma2 = np.average(err_data), np.std(err_data)
+    n2, bins2, patches2 = plt.hist(
+        err_data, 70, normed=1, facecolor='purple', alpha=0.50, label='Observed')
+    handler.insert_legend(ax3)
+    # ------------------------------
+
+    # ------------------------------
+    ax3 = plt.subplot(3, 3, 9)
+    ax3.set_ylabel('Probability Density Function (%)', {'fontsize': 14})
+    ax3.set_yticks([0.000, 0.0005, 0.001, 0.0015, 0.002])
+    plt.yticks([0.000, 0.00075, 0.0015, 0.00225, 0.003],
+               ['0.00%', '0.75%', '1.50%', '2.25%', '3.0%'])
+    plt.axis([-1500, 1500, 0, 10])
+    ax3.set_ylim(ymax=0.003, ymin=0)
+    y = mlab.normpdf(bins1, mu1, sigma1)
+    synt_data = calibrate_arma(data=err_data)
+    ax3.plot(bins, y, linestyle='--', color='#000073', linewidth=1.5, label='Simulated with ARMA(5, 1)')
+    y = mlab.normpdf(bins2, mu2, sigma2)
+    synt_data = calibrate_arma(data=err_data)
+    plt.plot(bins, y, linestyle='--', color='purple', linewidth=1.5, label='Observed')
+    handler.insert_legend(ax3)
+    # ------------------------------
+
+
+
+plt.subplots_adjust(left=0.04, bottom=0.04, right=0.98, top=0.95,
+                    wspace=0.05, hspace=0.15)
+plt.show()
