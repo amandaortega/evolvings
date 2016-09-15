@@ -5,7 +5,7 @@ class Handler(object):
     def __init__(self):
         pass
 
-    def insert_legend(self, ax=None, loc='upper left',
+    def insert_legend(self, ax=None, loc='lower right',
                       fontsize='large', linewidth=1.5):
         legend = ax.legend(loc=loc, shadow=True)
 
